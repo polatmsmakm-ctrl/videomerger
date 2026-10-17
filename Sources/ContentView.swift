@@ -42,8 +42,7 @@ enum ImportMode { case videos, zip }
 struct ContentView: View {
     @State private var clips: [Clip] = []
     @State private var photoItems: [PhotosPickerItem] = []
-    @State private var aspect: OutputAspect = .original
-    @State private var fill = false
+    @State private var options = MergeOptions()
     @State private var totalSeconds = 0.0
     @State private var zipRef: ZipRef?
     @State private var resultRef: ResultRef?
@@ -93,7 +92,7 @@ struct ContentView: View {
                 .frame(width: 46, height: 46)
                 .background(Theme.gradient, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
-                Text("دمج الفيديو").font(.title2.bold())
+                Text("VoiceMerger").font(.title2.bold())
                 Text(clips.isEmpty ? "أضف مقاطعك بالترتيب" : "\(clips.count) مقاطع · \(Self.format(totalSeconds))")
                     .font(.footnote).foregroundColor(.secondary)
             }
@@ -154,15 +153,19 @@ struct ContentView: View {
 
     private var optionsCard: some View {
         VStack(spacing: 10) {
-            Picker("المقاس", selection: $aspect) {
+            Picker("المقاس", selection: $options.aspect) {
                 ForEach(OutputAspect.allCases) { Text($0.rawValue).tag($0) }
             }
             .pickerStyle(.segmented)
-            if aspect != .original {
-                Toggle("ملء الإطار (قص الأطراف بدل الشريط الأسود)", isOn: $fill)
-                    .font(.footnote).tint(Theme.accent2)
+            if options.aspect != .original {
+                Toggle("ملء الإطار (قص الأطراف بدل الشريط الأسود)", isOn: $options.fill)
             }
+            Toggle("تلاشي ناعم بين المقاطع", isOn: $options.fade)
+            Toggle("كتم الصوت", isOn: $options.mute)
+            Toggle("جودة عالية", isOn: $options.highQuality)
         }
+        .font(.footnote)
+        .tint(Theme.accent2)
         .padding(12)
         .background(Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
@@ -241,7 +244,7 @@ struct ContentView: View {
         let urls = clips.map(\.url)
         Task {
             do {
-                let out = try await Merger.merge(urls: urls, aspect: aspect, fill: fill) { p in
+                let out = try await Merger.merge(urls: urls, options: options) { p in
                     Task { @MainActor in progress = p }
                 }
                 status = "جاري الحفظ في الاستوديو…"

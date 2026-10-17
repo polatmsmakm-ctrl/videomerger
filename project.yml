@@ -28,7 +28,7 @@ targets:
     info:
       path: Sources/Info.plist
       properties:
-        CFBundleDisplayName: دمج الفيديو
+        CFBundleDisplayName: VoiceMerger
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         NSPhotoLibraryUsageDescription: لاختيار المقاطع من الاستوديو
