@@ -160,7 +160,26 @@ struct ContentView: View {
             if options.aspect != .original {
                 Toggle("ملء الإطار (قص الأطراف بدل الشريط الأسود)", isOn: $options.fill)
             }
-            Toggle("تلاشي ناعم بين المقاطع", isOn: $options.fade)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("الانتقال بين المقاطع").foregroundColor(.secondary)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(TransitionStyle.allCases) { t in
+                            Button { options.transition = t; Haptics.tap() } label: {
+                                VStack(spacing: 4) {
+                                    Image(systemName: t.icon).font(.system(size: 18))
+                                    Text(t.rawValue).font(.caption2.weight(.semibold))
+                                }
+                                .frame(width: 72, height: 54)
+                                .foregroundColor(options.transition == t ? .white : .secondary)
+                                .background(options.transition == t
+                                            ? AnyShapeStyle(Theme.gradient) : AnyShapeStyle(Color.white.opacity(0.07)),
+                                            in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            }
+                        }
+                    }
+                }
+            }
             Toggle("كتم الصوت", isOn: $options.mute)
             Toggle("جودة عالية", isOn: $options.highQuality)
         }
