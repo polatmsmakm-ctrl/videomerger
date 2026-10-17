@@ -234,9 +234,19 @@ enum Merger {
         ticker.cancel()
 
         guard session.status == .completed else {
-            throw MergeError.exportFailed(session.error?.localizedDescription ?? "غير معروف")
+            throw MergeError.exportFailed(describe(session.error))
         }
         progress(1)
         return out
+    }
+
+    private static func describe(_ error: Error?) -> String {
+        guard let e = error as NSError? else { return "غير معروف" }
+        var text = "\(e.localizedDescription) [\(e.domain) \(e.code)]"
+        if let reason = e.localizedFailureReason { text += "\n\(reason)" }
+        if let u = e.userInfo[NSUnderlyingErrorKey] as? NSError {
+            text += "\nسبب أعمق: \(u.localizedDescription) [\(u.domain) \(u.code)]"
+        }
+        return text
     }
 }
