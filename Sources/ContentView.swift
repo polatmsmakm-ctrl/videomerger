@@ -42,8 +42,9 @@ enum ImportMode { case videos, zip }
 struct ContentView: View {
     @State private var clips: [Clip] = []
     @State private var photoItems: [PhotosPickerItem] = []
-    @State private var importMode: ImportMode = .videos
-    @State private var showImporter = false
+    @State private var aspect: OutputAspect = .original
+    @State private var fill = false
+    @State private var totalSeconds = 0.0
     @State private var zipRef: ZipRef?
     @State private var resultRef: ResultRef?
     @State private var busy = false
@@ -54,24 +55,23 @@ struct ContentView: View {
     var body: some View {
         ZStack {
             Theme.background.ignoresSafeArea()
-            VStack(spacing: 18) {
+            Circle().fill(Theme.accent.opacity(0.35)).frame(width: 300).blur(radius: 90)
+                .offset(x: -140, y: -330).ignoresSafeArea()
+            Circle().fill(Theme.accent2.opacity(0.25)).frame(width: 260).blur(radius: 90)
+                .offset(x: 160, y: 380).ignoresSafeArea()
+            VStack(spacing: 16) {
                 header
                 sources
                 clipList
+                if clips.count >= 2 { optionsCard }
                 bottomBar
             }
             .padding(.horizontal, 18)
             .padding(.top, 8)
         }
         .preferredColorScheme(.dark)
+        .task(id: clips.map(\.id)) { totalSeconds = await Self.totalDuration(clips) }
         .onChange(of: photoItems) { items in loadPhotos(items) }
-        .fileImporter(isPresented: $showImporter,
-                      allowedContentTypes: importMode == .zip
-                        ? [.zip]
-                        : [.movie, .video, .mpeg4Movie, .quickTimeMovie],
-                      allowsMultipleSelection: importMode == .videos) { r in
-            if case .success(let urls) = r { handleImported(urls) }
-        }
         .sheet(item: $zipRef) { ref in
             ZipPickerView(zipURL: ref.url) { extracted in
                 clips += extracted
@@ -94,23 +94,30 @@ struct ContentView: View {
                 .background(Theme.gradient, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
                 Text("دمج الفيديو").font(.title2.bold())
-                Text(clips.isEmpty ? "أضف مقاطعك بالترتيب" : "\(clips.count) مقاطع جاهزة للدمج")
+                Text(clips.isEmpty ? "أضف مقاطعك بالترتيب" : "\(clips.count) مقاطع · \(Self.format(totalSeconds))")
                     .font(.footnote).foregroundColor(.secondary)
             }
             Spacer()
+            if !clips.isEmpty {
+                Button { withAnimation { clips.removeAll() } } label: {
+                    Image(systemName: "trash").foregroundColor(.red.opacity(0.9))
+                        .frame(width: 40, height: 40)
+                        .background(Theme.card, in: Circle())
+                }
+            }
         }
     }
 
     private var sources: some View {
         HStack(spacing: 12) {
             PhotosPicker(selection: $photoItems, matching: .videos) {
-                SourceTile(icon: "photo.on.rectangle.angled", title: "الاستوديو")
+                SourceTile(icon: "photo.on.rectangle.angled", title: "الاستوديو", subtitle: "الصور")
             }
-            Button { importMode = .videos; showImporter = true } label: {
-                SourceTile(icon: "folder.fill", title: "الملفات")
+            Button { pickFiles(zip: false) } label: {
+                SourceTile(icon: "folder.fill", title: "الملفات", subtitle: "فيديوهات")
             }
-            Button { importMode = .zip; showImporter = true } label: {
-                SourceTile(icon: "doc.zipper", title: "ملف ZIP")
+            Button { pickFiles(zip: true) } label: {
+                SourceTile(icon: "doc.zipper", title: "ملف ZIP", subtitle: "مضغوط")
             }
         }
         .disabled(busy)
@@ -145,6 +152,33 @@ struct ContentView: View {
         }
     }
 
+    private var optionsCard: some View {
+        VStack(spacing: 10) {
+            Picker("المقاس", selection: $aspect) {
+                ForEach(OutputAspect.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            if aspect != .original {
+                Toggle("ملء الإطار (قص الأطراف بدل الشريط الأسود)", isOn: $fill)
+                    .font(.footnote).tint(Theme.accent2)
+            }
+        }
+        .padding(12)
+        .background(Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    nonisolated private static func totalDuration(_ clips: [Clip]) async -> Double {
+        var t = 0.0
+        for c in clips {
+            if let d = try? await AVURLAsset(url: c.url).load(.duration) { t += d.seconds }
+        }
+        return t
+    }
+
+    private static func format(_ s: Double) -> String {
+        String(format: "%d:%02d", Int(s) / 60, Int(s) % 60)
+    }
+
     private var bottomBar: some View {
         VStack(spacing: 10) {
             if busy {
@@ -160,6 +194,7 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity).padding(.vertical, 16)
                 .foregroundColor(.white)
                 .background(Theme.gradient, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .shadow(color: Theme.accent.opacity(clips.count < 2 ? 0 : 0.5), radius: 14, y: 6)
                 .opacity(clips.count < 2 || busy ? 0.4 : 1)
             }
             .disabled(clips.count < 2 || busy)
@@ -169,11 +204,16 @@ struct ContentView: View {
 
     // MARK: Importing
 
-    private func handleImported(_ urls: [URL]) {
-        let zips = urls.filter { $0.pathExtension.lowercased() == "zip" }
-        let videos = urls.filter { $0.pathExtension.lowercased() != "zip" }
-        if let z = zips.first { zipRef = ZipRef(url: z) }
-        if !videos.isEmpty { loadFiles(videos) }
+    private func pickFiles(zip: Bool) {
+        let types: [UTType] = zip ? [.zip] : [.movie, .video, .mpeg4Movie, .quickTimeMovie]
+        DocumentPicker.present(types: types, multiple: !zip) { urls in
+            if zip {
+                if let z = urls.first { zipRef = ZipRef(url: z) }
+            } else {
+                clips += urls.map { Clip(url: $0, name: $0.lastPathComponent) }
+                Haptics.tap()
+            }
+        }
     }
 
     private func loadPhotos(_ items: [PhotosPickerItem]) {
@@ -194,32 +234,6 @@ struct ContentView: View {
         }
     }
 
-    private func loadFiles(_ urls: [URL]) {
-        busy = true; status = "جاري نسخ الملفات…"; progress = 0
-        Task {
-            let added = await Self.copyFiles(urls)
-            clips += added
-            busy = false
-            if added.count < urls.count { error = "تعذر نسخ \(urls.count - added.count) ملف" }
-        }
-    }
-
-    nonisolated private static func copyFiles(_ urls: [URL]) async -> [Clip] {
-        await Task.detached {
-            var added: [Clip] = []
-            for url in urls {
-                let ok = url.startAccessingSecurityScopedResource()
-                defer { if ok { url.stopAccessingSecurityScopedResource() } }
-                let dest = FileManager.default.temporaryDirectory
-                    .appendingPathComponent("\(UUID().uuidString)-\(url.lastPathComponent)")
-                if (try? FileManager.default.copyItem(at: url, to: dest)) != nil {
-                    added.append(Clip(url: dest, name: url.lastPathComponent))
-                }
-            }
-            return added
-        }.value
-    }
-
     // MARK: Merge
 
     private func merge() {
@@ -227,11 +241,12 @@ struct ContentView: View {
         let urls = clips.map(\.url)
         Task {
             do {
-                let out = try await Merger.merge(urls: urls) { p in
+                let out = try await Merger.merge(urls: urls, aspect: aspect, fill: fill) { p in
                     Task { @MainActor in progress = p }
                 }
                 status = "جاري الحفظ في الاستوديو…"
                 try await save(out)
+                Haptics.success()
                 resultRef = ResultRef(url: out)
             } catch {
                 self.error = error.localizedDescription
@@ -253,13 +268,18 @@ struct ContentView: View {
 struct SourceTile: View {
     let icon: String
     let title: String
+    var subtitle: String = ""
     var body: some View {
         VStack(spacing: 8) {
             Image(systemName: icon).font(.system(size: 24)).foregroundStyle(Theme.gradient)
-            Text(title).font(.footnote.weight(.semibold)).foregroundColor(.primary)
+            VStack(spacing: 1) {
+                Text(title).font(.footnote.weight(.semibold)).foregroundColor(.primary)
+                if !subtitle.isEmpty { Text(subtitle).font(.caption2).foregroundColor(.secondary) }
+            }
         }
         .frame(maxWidth: .infinity).padding(.vertical, 16)
-        .background(Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        
+        .background(.ultraThinMaterial.opacity(0.6), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.white.opacity(0.1)))
     }
 }

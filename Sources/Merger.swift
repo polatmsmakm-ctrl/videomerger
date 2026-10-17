@@ -12,10 +12,23 @@ enum MergeError: LocalizedError {
     }
 }
 
+enum OutputAspect: String, CaseIterable, Identifiable {
+    case original = "الأصلي", portrait = "عمودي 9:16", landscape = "أفقي 16:9", square = "مربع 1:1"
+    var id: String { rawValue }
+    var size: CGSize? {
+        switch self {
+        case .original: return nil
+        case .portrait: return CGSize(width: 1080, height: 1920)
+        case .landscape: return CGSize(width: 1920, height: 1080)
+        case .square: return CGSize(width: 1080, height: 1080)
+        }
+    }
+}
+
 /// Joins the given videos back to back, in order, into one MP4.
 /// Every clip is fitted (aspect-fit, centered) into the first clip's frame.
 enum Merger {
-    static func merge(urls: [URL], progress: @escaping (Double) -> Void) async throws -> URL {
+    static func merge(urls: [URL], aspect: OutputAspect = .original, fill: Bool = false, progress: @escaping (Double) -> Void) async throws -> URL {
         let composition = AVMutableComposition()
         guard let videoTrack = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid),
               let audioTrack = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
@@ -48,12 +61,13 @@ enum Merger {
         }
 
         // Output frame = first clip's oriented size (even numbers for the encoder).
-        let first = pieces[0].size
+        let first = aspect.size ?? pieces[0].size
         let render = CGSize(width: CGFloat(Int(first.width) / 2 * 2), height: CGFloat(Int(first.height) / 2 * 2))
 
         var instructions: [AVMutableVideoCompositionInstruction] = []
         for p in pieces {
-            let s = min(render.width / p.size.width, render.height / p.size.height)
+            let sx = render.width / p.size.width, sy = render.height / p.size.height
+            let s = fill ? max(sx, sy) : min(sx, sy)
             let fit = p.transform
                 .concatenating(CGAffineTransform(scaleX: s, y: s))
                 .concatenating(CGAffineTransform(translationX: (render.width - p.size.width * s) / 2,
