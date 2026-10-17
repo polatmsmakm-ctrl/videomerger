@@ -1,0 +1,41 @@
+name: VideoMerger
+
+options:
+  bundleIdPrefix: com.videomerger
+  deploymentTarget:
+    iOS: "16.0"
+
+packages:
+  ZIPFoundation:
+    url: https://github.com/weichsel/ZIPFoundation
+    exactVersion: 0.9.19
+
+settings:
+  base:
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+
+targets:
+  VideoMerger:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+    dependencies:
+      - package: ZIPFoundation
+    info:
+      path: Sources/Info.plist
+      properties:
+        CFBundleDisplayName: دمج الفيديو
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSPhotoLibraryUsageDescription: لاختيار المقاطع من الاستوديو
+        NSPhotoLibraryAddUsageDescription: لحفظ الفيديو المدموج في الاستوديو
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.videomerger.app
+        GENERATE_INFOPLIST_FILE: NO
